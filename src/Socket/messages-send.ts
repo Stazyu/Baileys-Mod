@@ -1061,7 +1061,9 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				}
 			}
 
-			const is1on1Send = !isGroup && !isRetryResend && !isStatus && !isNewsletter
+			// WA Web never attaches tctoken to peer (AppStateSync) messages; server rejects with 479.
+			const isPeerMessage = additionalAttributes?.['category'] === 'peer'
+			const is1on1Send = !isGroup && !isRetryResend && !isStatus && !isNewsletter && !isPeerMessage
 			let didFetchTcToken = false
 
 			// Resolve destination to LID for tctoken storage — matches Signal session key pattern
