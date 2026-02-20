@@ -90,6 +90,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		groupToggleEphemeral
 	} = sock
 
+	const getLIDForPN = signalRepository.lidMapping.getLIDForPN.bind(signalRepository.lidMapping)
+
 	const userDevicesCache =
 		config.userDevicesCache ||
 		new NodeCache<JidWithDevice[]>({
@@ -1067,12 +1069,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			let didFetchTcToken = false
 
 			// Resolve destination to LID for tctoken storage — matches Signal session key pattern
-			const tcTokenJid = is1on1Send
-				? await resolveTcTokenJid(
-						destinationJid,
-						signalRepository.lidMapping.getLIDForPN.bind(signalRepository.lidMapping)
-					)
-				: destinationJid
+			const tcTokenJid = is1on1Send ? await resolveTcTokenJid(destinationJid, getLIDForPN) : destinationJid
 			const contactTcTokenData = is1on1Send ? await authState.keys.get('tctoken', [tcTokenJid]) : {}
 			const existingTokenEntry = contactTcTokenData[tcTokenJid]
 			let tcTokenBuffer = existingTokenEntry?.token
@@ -1180,20 +1177,29 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				// This ensures failed issuance allows re-issuance on the next message
 				// rather than blocking it for up to 7 days (one bucket duration).
 				getPrivacyTokens([destinationJid], issueTimestamp)
-					.then(async () => {
-						// Re-read entry to avoid overwriting concurrent notification handler updates
+					.then(async result => {
+						// Store any tokens the server returned in the IQ response
+						await storeTcTokensFromIqResult({
+							result,
+							fallbackJid: tcTokenJid,
+							keys: authState.keys,
+							getLIDForPN
+						})
+
+						// Persist senderTimestamp to prevent redundant issuances.
+						// WA Web stores tcTokenSenderTimestamp in the chat table unconditionally.
 						const currentData = await authState.keys.get('tctoken', [tcTokenJid])
 						const currentEntry = currentData[tcTokenJid]
-						if (currentEntry?.token?.length) {
-							await authState.keys.set({
-								tctoken: {
-									[tcTokenJid]: {
-										...currentEntry,
-										senderTimestamp: issueTimestamp
-									}
+						await authState.keys.set({
+							tctoken: {
+								[tcTokenJid]: {
+									// Spread preserves token+timestamp if they exist,
+									// falls back to empty buffer if no token received yet
+									token: Buffer.alloc(0),
+									...currentEntry,
+									senderTimestamp: issueTimestamp
 								}
 							})
-						}
 					})
 					.catch(err => {
 						logger.debug({ jid: destinationJid, err: err?.message }, 'fire-and-forget tctoken issuance failed')
