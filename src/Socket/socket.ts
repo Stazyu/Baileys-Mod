@@ -54,6 +54,18 @@ import { BinaryInfo } from '../WAM/BinaryInfo.js'
 import { USyncQuery, USyncUser } from '../WAUSync/'
 import { WebSocketClient } from './Client'
 
+export const isConnectionStale = (
+	lastDateRecv: Date | undefined,
+	keepAliveIntervalMs: number,
+	now = Date.now()
+) => {
+	if (!lastDateRecv) {
+		return false
+	}
+
+	return now - lastDateRecv.getTime() > keepAliveIntervalMs + 5000
+}
+
 /**
  * Connects to WA servers and performs:
  * - simple queries (no retry mechanism, wait for connection establishment)
@@ -124,11 +136,35 @@ export const makeSocket = (config: SocketConfig) => {
 	ws.connect()
 
 	const sendPromise = promisify(ws.send)
+	const assertOutboundConnectionAlive = () => {
+		if (isConnectionStale(lastDateRecv, keepAliveIntervalMs)) {
+			const inactiveForMs = Date.now() - lastDateRecv.getTime()
+			const error = new Boom('Connection was lost', {
+				statusCode: DisconnectReason.connectionLost,
+				data: {
+					staleConnection: true,
+					retryAfterReconnect: true,
+					retriable: true,
+					inactiveForMs,
+					keepAliveIntervalMs
+				}
+			})
+			logger.warn(
+				{ inactiveForMs, keepAliveIntervalMs },
+				'outbound send blocked because socket is open but stale; forcing reconnect'
+			)
+			void end(error)
+			throw error
+		}
+	}
+
 	/** send a raw buffer */
 	const sendRawMessage = async (data: Uint8Array | Buffer) => {
 		if (!ws.isOpen) {
 			throw new Boom('Connection Closed', { statusCode: DisconnectReason.connectionClosed })
 		}
+
+		assertOutboundConnectionAlive()
 
 		const bytes = noise.encodeFrame(data)
 		await promiseTimeout<void>(connectTimeoutMs, async (resolve, reject) => {

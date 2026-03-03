@@ -38,6 +38,7 @@ import {
 import { getUrlInfo } from '../Utils/link-preview'
 import { makeKeyedMutex } from '../Utils/make-mutex'
 import { getMessageReportingToken, shouldIncludeReportingToken } from '../Utils/reporting-utils'
+import { isRetryableStaleConnectionError } from '../Utils/retryable-send'
 import {
 	isTcTokenExpired,
 	resolveTcTokenJid,
@@ -1472,13 +1473,32 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					} as BinaryNode)
 				}
 
-				await relayMessage(targetJid, fullMsg.message, {
+				const retryRelayOptions: MessageRelayOptions = {
 					messageId: fullMsg.key.id!,
 					useCachedGroupMetadata: options.useCachedGroupMetadata,
 					additionalAttributes,
 					statusJidList: options.statusJidList,
 					additionalNodes
-				})
+				}
+				try {
+					await relayMessage(targetJid, fullMsg.message, retryRelayOptions)
+				} catch (error) {
+					if (isRetryableStaleConnectionError(error)) {
+						throw new Boom('Send failed due to stale connection; safe to retry after reconnect', {
+							statusCode: error.output.statusCode,
+							data: {
+								...error.data,
+								retryableSend: {
+									targetJid,
+									fullMessage: fullMsg,
+									relayOptions: retryRelayOptions
+								}
+							}
+						})
+					}
+
+					throw error
+				}
 				if (config.emitOwnEvents) {
 					process.nextTick(async () => {
 						await messageMutex.mutex(() => upsertMessage(fullMsg, 'append'))
