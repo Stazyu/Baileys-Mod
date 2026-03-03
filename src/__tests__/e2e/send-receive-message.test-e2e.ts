@@ -1,6 +1,6 @@
 import { Boom } from '@hapi/boom'
 import { jest } from '@jest/globals'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import P from 'pino'
 import makeWASocket, {
 	DisconnectReason,
@@ -15,14 +15,18 @@ import makeWASocket, {
 
 jest.setTimeout(30_000)
 
-describe('E2E Tests', () => {
+const E2E_AUTH_DIR = 'baileys_auth_info'
+const E2E_AUTH_CREDS_PATH = `${E2E_AUTH_DIR}/creds.json`
+const describeE2E = existsSync(E2E_AUTH_CREDS_PATH) ? describe : describe.skip
+
+describeE2E('E2E Tests', () => {
 	let sock: ReturnType<typeof makeWASocket>
 	let meJid: string | undefined
 	let meLid: string | undefined
 	let groupJid: string | undefined
 
 	beforeAll(async () => {
-		const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info')
+		const { state, saveCreds } = await useMultiFileAuthState(E2E_AUTH_DIR)
 		const logger = P({ level: 'silent' })
 
 		sock = makeWASocket({
@@ -33,9 +37,14 @@ describe('E2E Tests', () => {
 		sock.ev.on('creds.update', saveCreds)
 
 		await new Promise<void>((resolve, reject) => {
+			const connectTimeout = setTimeout(() => {
+				reject(new Error(`Timed out waiting for WhatsApp connection using ${E2E_AUTH_CREDS_PATH}`))
+			}, 20_000)
+
 			sock.ev.on('connection.update', update => {
 				const { connection, lastDisconnect } = update
 				if (connection === 'open') {
+					clearTimeout(connectTimeout)
 					meJid = jidNormalizedUser(sock.user?.id)
 					meLid = sock.user?.lid
 
@@ -52,6 +61,7 @@ describe('E2E Tests', () => {
 						})
 						.catch(reject)
 				} else if (connection === 'close') {
+					clearTimeout(connectTimeout)
 					const reason = (lastDisconnect?.error as Boom)?.output?.statusCode
 					if (reason === DisconnectReason.loggedOut) {
 						console.error('Logged out, please delete the baileys_auth_info_e2e folder and re-run the test')
@@ -299,11 +309,11 @@ describe('E2E Tests', () => {
 		let timeoutId: NodeJS.Timeout | undefined
 
 		try {
-			const receivedMsgPromise = new Promise<proto.IWebMessageInfo>((resolve, reject) => {
+			const receivedMsgPromise = new Promise<WAMessage>((resolve, reject) => {
 				listener = ({ messages }) => {
 					const msg = messages.find(m => m.message?.imageMessage?.caption === caption)
 					if (msg) {
-						resolve(msg)
+						resolve(msg as WAMessage)
 					}
 				}
 
@@ -360,11 +370,11 @@ describe('E2E Tests', () => {
 		let timeoutId: NodeJS.Timeout | undefined
 
 		try {
-			const receivedMsgPromise = new Promise<proto.IWebMessageInfo>((resolve, reject) => {
+			const receivedMsgPromise = new Promise<WAMessage>((resolve, reject) => {
 				listener = ({ messages }) => {
 					const msg = messages.find(m => m.message?.imageMessage?.caption === caption)
 					if (msg) {
-						resolve(msg)
+						resolve(msg as WAMessage)
 					}
 				}
 
@@ -418,11 +428,11 @@ describe('E2E Tests', () => {
 		let timeoutId: NodeJS.Timeout | undefined
 
 		try {
-			const receivedMsgPromise = new Promise<proto.IWebMessageInfo>((resolve, reject) => {
+			const receivedMsgPromise = new Promise<WAMessage>((resolve, reject) => {
 				listener = ({ messages }) => {
 					const msg = messages.find(m => m.message?.imageMessage?.caption === caption)
 					if (msg) {
-						resolve(msg)
+						resolve(msg as WAMessage)
 					}
 				}
 
@@ -482,10 +492,10 @@ describe('E2E Tests', () => {
 
 		try {
 			console.log('Sending initial image message...')
-			const receivedImagePromise = new Promise<proto.IWebMessageInfo>((resolve, reject) => {
+			const receivedImagePromise = new Promise<WAMessage>((resolve, reject) => {
 				imageListener = ({ messages }) => {
 					const msg = messages.find(m => m.message?.imageMessage?.caption === originalCaption)
-					if (msg) resolve(msg)
+					if (msg) resolve(msg as WAMessage)
 				}
 
 				sock.ev.on('messages.upsert', imageListener)
@@ -507,10 +517,10 @@ describe('E2E Tests', () => {
 			console.log('Initial image message sent and received.')
 
 			console.log('Sending command message as a reply...')
-			const receivedCommandPromise = new Promise<proto.IWebMessageInfo>((resolve, reject) => {
+			const receivedCommandPromise = new Promise<WAMessage>((resolve, reject) => {
 				commandListener = ({ messages }) => {
 					const msg = messages.find(m => m.message?.extendedTextMessage?.text === commandText)
-					if (msg) resolve(msg)
+					if (msg) resolve(msg as WAMessage)
 				}
 
 				sock.ev.on('messages.upsert', commandListener)
@@ -567,12 +577,12 @@ describe('E2E Tests', () => {
 
 		try {
 			console.log(`Sending initial video message to group ${groupJid}...`)
-			const receivedVideoPromise = new Promise<proto.IWebMessageInfo>((resolve, reject) => {
+			const receivedVideoPromise = new Promise<WAMessage>((resolve, reject) => {
 				videoListener = ({ messages }) => {
 										const msg = messages.find(
-											m => m.key.remoteJid === groupJid && m.message?.videoMessage?.caption === originalCaption
+											m => m.key?.remoteJid === groupJid && m.message?.videoMessage?.caption === originalCaption
 										)
-										if (msg) resolve(msg)
+										if (msg) resolve(msg as WAMessage)
 									}
 				sock.ev.on('messages.upsert', videoListener)
 				timeoutId = setTimeout(() => reject(new Error('Timed out waiting for initial group image message')), 30_000)
@@ -589,12 +599,12 @@ describe('E2E Tests', () => {
 			console.log('Initial group image message sent and received.')
 
 			console.log('Sending command message as a reply in the group...')
-			const receivedCommandPromise = new Promise<proto.IWebMessageInfo>((resolve, reject) => {
+			const receivedCommandPromise = new Promise<WAMessage>((resolve, reject) => {
 				commandListener = ({ messages }) => {
 										const msg = messages.find(
-											m => m.key.remoteJid === groupJid && m.message?.extendedTextMessage?.text === commandText
+											m => m.key?.remoteJid === groupJid && m.message?.extendedTextMessage?.text === commandText
 										)
-										if (msg) resolve(msg)
+										if (msg) resolve(msg as WAMessage)
 									}
 				sock.ev.on('messages.upsert', commandListener)
 				timeoutId = setTimeout(() => reject(new Error('Timed out waiting for group command message')), 30_000)

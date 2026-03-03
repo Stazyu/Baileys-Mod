@@ -327,7 +327,7 @@ export const getMessageReportingToken = async (
 	const from = key.fromMe ? key.remoteJid! : key.participant || key.remoteJid!
 	const to = key.fromMe ? key.participant || key.remoteJid! : key.remoteJid!
 
-	const reportingSecret = generateMsgSecretKey(ENC_SECRET_REPORT_TOKEN, key.id, from, to, msgSecret)
+	const reportingSecret = await generateMsgSecretKey(ENC_SECRET_REPORT_TOKEN, key.id, from, to, msgSecret)
 
 	let content = extractReportingTokenContent(msgProtobuf, compiledReportingFields)
 	if ((!content || content.length === 0) && message.documentWithCaptionMessage?.message) {

@@ -106,6 +106,8 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 
 	/** this mutex ensures that each retryRequest will wait for the previous one to finish */
 	const retryMutex = makeMutex()
+	/** tracks message IDs that have already been retried for error 463 */
+	const tcTokenRetriedMsgIds = new Set<string>()
 
 	const msgRetryCache =
 		config.msgRetryCounterCache ||

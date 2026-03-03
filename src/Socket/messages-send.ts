@@ -1202,7 +1202,8 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 									...currentEntry,
 									senderTimestamp: issueTimestamp
 								}
-							})
+							}
+						})
 					})
 					.catch(err => {
 						logger.debug({ jid: destinationJid, err: err?.message }, 'fire-and-forget tctoken issuance failed')
