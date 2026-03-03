@@ -1,7 +1,6 @@
 import { Boom } from '@hapi/boom'
 import { createHash, randomBytes } from 'crypto'
 import { proto } from '../../WAProto/index.js'
-const baileysVersion = [2, 3000, 1033927531]
 import type {
 	BaileysEventEmitter,
 	BaileysEventMap,
@@ -11,6 +10,7 @@ import type {
 	WAVersion
 } from '../Types'
 import { DisconnectReason } from '../Types'
+import { BAILEYS_VERSION } from '../Defaults/baileys-version'
 import { type BinaryNode, getAllBinaryNodeChildren, jidDecode } from '../WABinary'
 import { sha256 } from './crypto'
 
@@ -236,7 +236,7 @@ export const bindWaitForConnectionUpdate = (ev: BaileysEventEmitter) => bindWait
  * Use to ensure your WA connection is always on the latest version
  */
 export const fetchLatestBaileysVersion = async (options: RequestInit = {}) => {
-	const URL = 'https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/index.ts'
+	const URL = 'https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json'
 	try {
 		const response = await fetch(URL, {
 			dispatcher: options.dispatcher,
@@ -247,25 +247,19 @@ export const fetchLatestBaileysVersion = async (options: RequestInit = {}) => {
 			throw new Boom(`Failed to fetch latest Baileys version: ${response.statusText}`, { statusCode: response.status })
 		}
 
-		const text = await response.text()
-		// Extract version from line 7 (const version = [...])
-		const lines = text.split('\n')
-		const versionLine = lines[6] // Line 7 (0-indexed)
-		const versionMatch = versionLine!.match(/const version = \[(\d+),\s*(\d+),\s*(\d+)\]/)
+		const data = await response.json() as { version?: number[] }
+		const version = data.version
+		if(!Array.isArray(version) || version.length < 3) {
+			throw new Error('Could not parse version from Defaults/baileys-version.json')
+		}
 
-		if (versionMatch) {
-			const version = [parseInt(versionMatch[1]!), parseInt(versionMatch[2]!), parseInt(versionMatch[3]!)] as WAVersion
-
-			return {
-				version,
-				isLatest: true
-			}
-		} else {
-			throw new Error('Could not parse version from Defaults/index.ts')
+		return {
+			version: [version[0]!, version[1]!, version[2]!] as WAVersion,
+			isLatest: true
 		}
 	} catch (error) {
 		return {
-			version: baileysVersion as WAVersion,
+			version: BAILEYS_VERSION as WAVersion,
 			isLatest: false,
 			error
 		}
@@ -304,7 +298,7 @@ export const fetchLatestWaWebVersion = async (options: RequestInit = {}) => {
 
 		if (!match?.[1]) {
 			return {
-				version: baileysVersion as WAVersion,
+				version: BAILEYS_VERSION as WAVersion,
 				isLatest: false,
 				error: {
 					message: 'Could not find client revision in the fetched content'
@@ -320,7 +314,7 @@ export const fetchLatestWaWebVersion = async (options: RequestInit = {}) => {
 		}
 	} catch (error) {
 		return {
-			version: baileysVersion as WAVersion,
+			version: BAILEYS_VERSION as WAVersion,
 			isLatest: false,
 			error
 		}

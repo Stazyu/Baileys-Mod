@@ -3,8 +3,7 @@ import { makeLibSignalRepository } from '../Signal/libsignal'
 import type { AuthenticationState, SocketConfig, WAVersion } from '../Types'
 import { Browsers } from '../Utils/browser-utils'
 import logger from '../Utils/logger'
-
-const version = [2, 3000, 1033927531]
+import { BAILEYS_VERSION } from './baileys-version'
 
 export const UNAUTHORIZED_CODES = [401, 403, 419]
 
@@ -52,7 +51,7 @@ export const PROCESSABLE_HISTORY_TYPES = [
 ]
 
 export const DEFAULT_CONNECTION_CONFIG: SocketConfig = {
-	version: version as WAVersion,
+	version: BAILEYS_VERSION as WAVersion,
 	browser: Browsers.macOS('Chrome'),
 	waWebSocketUrl: 'wss://web.whatsapp.com/ws/chat',
 	connectTimeoutMs: 20_000,
