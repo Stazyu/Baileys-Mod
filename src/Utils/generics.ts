@@ -1,6 +1,7 @@
 import { Boom } from '@hapi/boom'
 import { createHash, randomBytes } from 'crypto'
 import { proto } from '../../WAProto/index.js'
+const baileysVersion = [2, 3000, 1034408607]
 import type {
 	BaileysEventEmitter,
 	BaileysEventMap,
@@ -10,7 +11,6 @@ import type {
 	WAVersion
 } from '../Types'
 import { DisconnectReason } from '../Types'
-import { BAILEYS_VERSION } from '../Defaults/baileys-version'
 import { type BinaryNode, getAllBinaryNodeChildren, jidDecode } from '../WABinary'
 import { sha256 } from './crypto'
 
@@ -259,7 +259,7 @@ export const fetchLatestBaileysVersion = async (options: RequestInit = {}) => {
 		}
 	} catch (error) {
 		return {
-			version: BAILEYS_VERSION as WAVersion,
+			version: baileysVersion as WAVersion,
 			isLatest: false,
 			error
 		}
@@ -298,7 +298,7 @@ export const fetchLatestWaWebVersion = async (options: RequestInit = {}) => {
 
 		if (!match?.[1]) {
 			return {
-				version: BAILEYS_VERSION as WAVersion,
+				version: baileysVersion as WAVersion,
 				isLatest: false,
 				error: {
 					message: 'Could not find client revision in the fetched content'
@@ -314,7 +314,7 @@ export const fetchLatestWaWebVersion = async (options: RequestInit = {}) => {
 		}
 	} catch (error) {
 		return {
-			version: BAILEYS_VERSION as WAVersion,
+			version: baileysVersion as WAVersion,
 			isLatest: false,
 			error
 		}
