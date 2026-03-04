@@ -74,7 +74,7 @@ const to64BitNetworkOrder = (e: number) => {
 
 type Mac = { indexMac: Uint8Array; valueMac: Uint8Array; operation: proto.SyncdMutation.SyncdOperation }
 
-const makeLtHashGenerator = ({ indexValueMap, hash }: Pick<LTHashState, 'hash' | 'indexValueMap'>) => {
+export const makeLtHashGenerator = ({ indexValueMap, hash }: Pick<LTHashState, 'hash' | 'indexValueMap'>) => {
 	indexValueMap = { ...indexValueMap }
 	const addBuffs: Uint8Array[] = []
 	const subBuffs: Uint8Array[] = []
@@ -85,7 +85,8 @@ const makeLtHashGenerator = ({ indexValueMap, hash }: Pick<LTHashState, 'hash' |
 			const prevOp = indexValueMap[indexMacBase64]
 			if (operation === proto.SyncdMutation.SyncdOperation.REMOVE) {
 				if (!prevOp) {
-					throw new Boom('tried remove, but no previous op', { data: { indexMac, valueMac } })
+					// WA Web skips this case and lets later MAC validation trigger recovery if needed.
+					return
 				}
 
 				// remove from index value mac, since this mutation is erased
@@ -129,6 +130,24 @@ const generatePatchMac = (
 
 export const newLTHashState = (): LTHashState => ({ version: 0, hash: Buffer.alloc(128), indexValueMap: {} })
 
+export const ensureLTHashStateVersion = (state: LTHashState): LTHashState => {
+	if (typeof state.version !== 'number' || isNaN(state.version)) {
+		state.version = 0
+	}
+
+	return state
+}
+
+export const MAX_SYNC_ATTEMPTS = 2
+
+export const isMissingKeyError = (error: any): boolean => {
+	return error?.data?.isMissingKey === true
+}
+
+export const isAppStateSyncIrrecoverable = (error: any, attempts: number): boolean => {
+	return attempts >= MAX_SYNC_ATTEMPTS || error?.name === 'TypeError'
+}
+
 export const encodeSyncdPatch = async (
 	{ type, index, syncAction, apiVersion, operation }: WAPatchCreate,
 	myAppStateKeyId: string,
@@ -137,7 +156,7 @@ export const encodeSyncdPatch = async (
 ) => {
 	const key = !!myAppStateKeyId ? await getAppStateSyncKey(myAppStateKeyId) : undefined
 	if (!key) {
-		throw new Boom(`myAppStateKey ("${myAppStateKeyId}") not present`, { statusCode: 404 })
+		throw new Boom(`myAppStateKey ("${myAppStateKeyId}") not present`, { data: { isMissingKey: true } })
 	}
 
 	const encKeyId = Buffer.from(myAppStateKeyId, 'base64')
@@ -258,8 +277,7 @@ export const decodeSyncdMutations = async (
 		const keyEnc = await getAppStateSyncKey(base64Key)
 		if (!keyEnc) {
 			throw new Boom(`failed to find key "${base64Key}" to decode mutation`, {
-				statusCode: 404,
-				data: { msgMutations }
+				data: { isMissingKey: true, msgMutations }
 			})
 		}
 
@@ -281,7 +299,7 @@ export const decodeSyncdPatch = async (
 		const base64Key = Buffer.from(msg.keyId!.id!).toString('base64')
 		const mainKeyObj = await getAppStateSyncKey(base64Key)
 		if (!mainKeyObj) {
-			throw new Boom(`failed to find key "${base64Key}" to decode patch`, { statusCode: 404, data: { msg } })
+			throw new Boom(`failed to find key "${base64Key}" to decode patch`, { data: { isMissingKey: true, msg } })
 		}
 
 		const mainKey = mutationKeys(mainKeyObj.keyData!)
@@ -403,7 +421,7 @@ export const decodeSyncdSnapshot = async (
 		const base64Key = Buffer.from(snapshot.keyId!.id!).toString('base64')
 		const keyEnc = await getAppStateSyncKey(base64Key)
 		if (!keyEnc) {
-			throw new Boom(`failed to find key "${base64Key}" to decode mutation`)
+			throw new Boom(`failed to find key "${base64Key}" to decode mutation`, { data: { isMissingKey: true } })
 		}
 
 		const result = mutationKeys(keyEnc.keyData!)
@@ -471,7 +489,7 @@ export const decodePatches = async (
 			const base64Key = Buffer.from(keyId!.id!).toString('base64')
 			const keyEnc = await getAppStateSyncKey(base64Key)
 			if (!keyEnc) {
-				throw new Boom(`failed to find key "${base64Key}" to decode mutation`)
+				throw new Boom(`failed to find key "${base64Key}" to decode mutation`, { data: { isMissingKey: true } })
 			}
 
 			const result = mutationKeys(keyEnc.keyData!)

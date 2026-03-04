@@ -11,7 +11,7 @@ const config: Config = {
 		'^(\\.{1,2}/.*)\\.js$': '$1',
 	},
 	transform: {
-		'^.+\\.[jt]sx?$': [
+		'^.+\\.tsx?$': [
 			'ts-jest',
 			{
 				useESM: true,
@@ -23,9 +23,20 @@ const config: Config = {
 				},
 			},
 		],
+		'^.+\\.js$': [
+			'ts-jest',
+			{
+				useESM: true,
+				tsconfig: {
+					module: 'esnext',
+					allowJs: true,
+					verbatimModuleSyntax: false,
+				},
+			},
+		],
 	},
 	transformIgnorePatterns: [
-		'node_modules/(?!(protobufjs|long|@protobufjs|@types/long)/)',
+		'node_modules/(?!(protobufjs|long|@protobufjs|@types/long|whatsapp-rust-bridge)/)',
 	],
 }
 
