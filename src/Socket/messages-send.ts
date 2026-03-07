@@ -67,6 +67,7 @@ import { USyncQuery, USyncUser } from '../WAUSync'
 import { makeNewsletterSocket } from './newsletter'
 
 export const makeMessagesSocket = (config: SocketConfig) => {
+	const PRE_SEND_TCTOKEN_TIMEOUT_MS = 700
 	const {
 		logger,
 		linkPreviewImageThumbnailWidth,
@@ -1093,9 +1094,11 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			// If tctoken is missing or expired for a 1:1 send, proactively fetch it from the server
 			if (!tcTokenBuffer?.length && is1on1Send) {
 				try {
-					logger.debug({ jid: destinationJid }, 'tctoken missing, requesting from server')
-					didFetchTcToken = true
-					const fetchResult = await getPrivacyTokens([destinationJid])
+					logger.debug(
+						{ jid: destinationJid, timeoutMs: PRE_SEND_TCTOKEN_TIMEOUT_MS },
+						'tctoken missing, requesting from server (bounded wait)'
+					)
+					const fetchResult = await getPrivacyTokens([destinationJid], undefined, PRE_SEND_TCTOKEN_TIMEOUT_MS)
 
 					// Parse inline tokens from IQ result using the shared parser
 					// (includes monotonicity guard)
@@ -1125,8 +1128,18 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 							}
 						})
 					}
+
+					didFetchTcToken = true
 				} catch (err: any) {
-					logger.warn({ jid: destinationJid, trace: err?.stack }, 'failed to fetch privacy token before send')
+					logger.warn(
+						{
+							jid: destinationJid,
+							timeoutMs: PRE_SEND_TCTOKEN_TIMEOUT_MS,
+							statusCode: err?.output?.statusCode,
+							trace: err?.stack
+						},
+						'failed to fetch privacy token before send, proceeding without blocking'
+					)
 				}
 			}
 
@@ -1286,30 +1299,33 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		return ''
 	}
 
-	const getPrivacyTokens = async (jids: string[], timestamp?: number) => {
+	const getPrivacyTokens = async (jids: string[], timestamp?: number, timeoutMs?: number) => {
 		const t = (timestamp ?? unixTimestampSeconds()).toString()
-		const result = await query({
-			tag: 'iq',
-			attrs: {
-				to: S_WHATSAPP_NET,
-				type: 'set',
-				xmlns: 'privacy'
+		const result = await query(
+			{
+				tag: 'iq',
+				attrs: {
+					to: S_WHATSAPP_NET,
+					type: 'set',
+					xmlns: 'privacy'
+				},
+				content: [
+					{
+						tag: 'tokens',
+						attrs: {},
+						content: jids.map(jid => ({
+							tag: 'token',
+							attrs: {
+								jid: jidNormalizedUser(jid),
+								t,
+								type: 'trusted_contact'
+							}
+						}))
+					}
+				]
 			},
-			content: [
-				{
-					tag: 'tokens',
-					attrs: {},
-					content: jids.map(jid => ({
-						tag: 'token',
-						attrs: {
-							jid: jidNormalizedUser(jid),
-							t,
-							type: 'trusted_contact'
-						}
-					}))
-				}
-			]
-		})
+			timeoutMs
+		)
 
 		return result
 	}
