@@ -94,69 +94,6 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 	const getLIDForPN = signalRepository.lidMapping.getLIDForPN.bind(signalRepository.lidMapping)
 
-	const remapMentionsToLidForGroup = async (message: proto.IMessage | undefined, targetJid: string) => {
-		if (!message || !isJidGroup(targetJid)) {
-			return
-		}
-
-		const contextInfos: proto.IContextInfo[] = []
-		const queue: any[] = [message]
-		while (queue.length) {
-			const node = queue.pop()
-			if (!node || typeof node !== 'object') {
-				continue
-			}
-
-			// Avoid traversing binary payloads.
-			if (ArrayBuffer.isView(node) || node instanceof ArrayBuffer) {
-				continue
-			}
-
-			if ('contextInfo' in node && node.contextInfo && typeof node.contextInfo === 'object') {
-				contextInfos.push(node.contextInfo as proto.IContextInfo)
-			}
-
-			for (const value of Object.values(node)) {
-				if (value && typeof value === 'object') {
-					queue.push(value)
-				}
-			}
-		}
-
-		for (const contextInfo of contextInfos) {
-			const beforeMentions = Array.isArray(contextInfo.mentionedJid) ? [...contextInfo.mentionedJid] : []
-			if (!beforeMentions.length) {
-				continue
-			}
-
-			const mappedMentions = await Promise.all(beforeMentions.map(async mentionJid => {
-				const normalized = jidNormalizedUser(mentionJid)
-				if (!isPnUser(normalized)) {
-					return normalized
-				}
-
-				const lidJid = await getLIDForPN(normalized)
-				return lidJid ? jidNormalizedUser(lidJid) : normalized
-			}))
-			const uniqueMentions = [...new Set(mappedMentions.filter(Boolean))]
-			const changed =
-				uniqueMentions.length !== beforeMentions.length ||
-				uniqueMentions.some((value, index) => value !== beforeMentions[index])
-
-			if (changed) {
-				contextInfo.mentionedJid = uniqueMentions
-				logger.info(
-					{
-						targetJid,
-						beforeMentions,
-						afterMentions: uniqueMentions
-					},
-					'MENTION_BAILEYS_REMAP'
-				)
-			}
-		}
-	}
-
 	const userDevicesCache =
 		config.userDevicesCache ||
 		new NodeCache<JidWithDevice[]>({
@@ -1517,7 +1454,6 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					...options
 				})
 				fullMsg.message = patchMessageForMdIfRequired(fullMsg.message!)
-				await remapMentionsToLidForGroup(fullMsg.message, targetJid)
 				const isEventMsg = 'event' in content && !!content.event
 				const isDeleteMsg = 'delete' in content && !!content.delete
 				const isEditMsg = 'edit' in content && !!content.edit
