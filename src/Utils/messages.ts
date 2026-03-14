@@ -732,23 +732,33 @@ export const generateWAMessageContent = async (
 		m = { viewOnceMessage: { message: m } }
 	}
 
-	if (
-		(hasOptionalProperty(message, 'mentions') && message.mentions?.length) ||
-		(hasOptionalProperty(message, 'mentionAll') && message.mentionAll)
-	) {
-		const messageType = Object.keys(m)[0]! as Extract<keyof proto.IMessage, MessageWithContextInfo>
-		const key = m[messageType]
-		if (key && 'contextInfo' in key) {
-			key.contextInfo = key.contextInfo || {}
-			if (message.mentions?.length) {
-				key.contextInfo.mentionedJid = message.mentions
-			}
+		if (
+			(hasOptionalProperty(message, 'mentions') && message.mentions?.length) ||
+			(hasOptionalProperty(message, 'mentionAll') && message.mentionAll)
+		) {
+			const messageType = Object.keys(m)[0]! as Extract<keyof proto.IMessage, MessageWithContextInfo>
+			const key = m[messageType]
+			if (key && 'contextInfo' in key) {
+				key.contextInfo = key.contextInfo || {}
+				if (message.mentions?.length) {
+					key.contextInfo.mentionedJid = message.mentions
+				}
 
-			if (message.mentionAll) {
-				key.contextInfo.nonJidMentions = 1
+				if (message.mentionAll) {
+					key.contextInfo.nonJidMentions = 1
+				}
+				try {
+					options.logger?.info({
+						msg: 'MENTION_BAILEYS_CONTEXT',
+						messageType,
+						mentionAll: !!message.mentionAll,
+						mentions: message.mentions || [],
+						mentionedJid: key.contextInfo.mentionedJid || [],
+						nonJidMentions: key.contextInfo.nonJidMentions || 0
+					}, 'Applied mentions contextInfo')
+				} catch {}
 			}
 		}
-	}
 
 	if (hasOptionalProperty(message, 'edit')) {
 		m = {
