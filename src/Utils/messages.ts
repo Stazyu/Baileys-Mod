@@ -758,6 +758,11 @@ export const generateWAMessageContent = async (
 					}, 'Applied mentions contextInfo')
 				} catch {}
 			}
+		} else if (key!) {
+			key.contextInfo = {
+				mentionedJid: message.mentions,
+				nonJidMentions: message.mentionAll ? 1 : 0
+			}
 		}
 
 	if (hasOptionalProperty(message, 'edit')) {
