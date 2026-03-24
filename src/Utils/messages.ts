@@ -757,11 +757,11 @@ export const generateWAMessageContent = async (
 						nonJidMentions: key.contextInfo.nonJidMentions || 0
 					}, 'Applied mentions contextInfo')
 				} catch {}
-			}
-		} else if (key!) {
-			key.contextInfo = {
-				mentionedJid: message.mentions,
-				nonJidMentions: message.mentionAll ? 1 : 0
+			} else if (key) {
+				key.contextInfo = {
+					mentionedJid: message.mentions,
+					nonJidMentions: message.mentionAll ? 1 : 0
+				}
 			}
 		}
 
