@@ -160,6 +160,19 @@ export const makeNoiseHandler = ({
 			if (transport) {
 				const result = transport.decrypt(frame)
 				frame = await decodeBinaryNode(result)
+				try {
+					if ((frame as BinaryNode)?.tag === 'call') {
+						;(frame as any).__unoRawDecryptedFrameBase64 = Buffer.from(result).toString('base64')
+						logger.info({
+							rawBytes: result?.byteLength,
+							rawPreviewHex: Buffer.from(result).subarray(0, 48).toString('hex'),
+							rawPreviewBase64: Buffer.from(result).subarray(0, 48).toString('base64'),
+							attrs: (frame as BinaryNode)?.attrs,
+							firstChildTag: Array.isArray((frame as BinaryNode)?.content) ? (frame as BinaryNode)?.content?.[0]?.tag : undefined,
+							firstChildAttrs: Array.isArray((frame as BinaryNode)?.content) ? (frame as BinaryNode)?.content?.[0]?.attrs : undefined,
+						}, 'VOIP noise decrypted call frame diagnostics')
+					}
+				} catch { }
 			}
 
 			if (logger.level === 'trace') {
