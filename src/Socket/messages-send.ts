@@ -930,21 +930,48 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					allRecipients.push(jid)
 				}
 
-				await assertSessions(allRecipients)
+				// Detect actual view-once media by inspecting the inner message's viewOnce flag.
+				// viewOnceMessage* wrappers are also used for interactive messages (buttons, lists, etc.)
+				// which do NOT carry viewOnce=true on the inner media — those must not be filtered.
+				const viewOnceInner =
+					message.viewOnceMessageV2?.message ||
+					message.viewOnceMessage?.message ||
+					message.viewOnceMessageV2Extension?.message
+				const isViewOnceMsg = !!(
+					viewOnceInner?.imageMessage?.viewOnce ||
+					viewOnceInner?.videoMessage?.viewOnce ||
+					viewOnceInner?.audioMessage?.viewOnce
+				)
+
+				// For view-once: send DSM only to primary phone (device=0).
+				// Companion devices (device>0) are omitted — the WA server generates
+				// <unavailable type="view_once"/> for them automatically.
+				// Sending an explicit <unavailable> from a companion is rejected by the server.
+				const viewOnceMeRecipients = isViewOnceMsg
+					? meRecipients.filter(jid => !jidDecode(jid)?.device)
+					: meRecipients
+
+				// Assert sessions only for recipients we actually encrypt for.
+				// For view-once, companions are omitted — asserting their sessions is wasteful
+				// and could block the send if a companion session is corrupted.
+				await assertSessions([...viewOnceMeRecipients, ...otherRecipients])
 
 				const [
 					{ nodes: meNodes, shouldIncludeDeviceIdentity: s1 },
 					{ nodes: otherNodes, shouldIncludeDeviceIdentity: s2 }
 				] = await Promise.all([
 					// For own devices: use DSM if available (1:1 chats only)
-					createParticipantNodes(meRecipients, meMsg || message, extraAttrs),
+					createParticipantNodes(viewOnceMeRecipients, meMsg || message, extraAttrs),
 					createParticipantNodes(otherRecipients, message, extraAttrs, meMsg)
 				])
 				participants.push(...meNodes)
 				participants.push(...otherNodes)
 
-				if (meRecipients.length > 0 || otherRecipients.length > 0) {
-					extraAttrs['phash'] = generateParticipantHashV2([...meRecipients, ...otherRecipients])
+				const phashRecipients = isViewOnceMsg
+					? [...viewOnceMeRecipients, ...otherRecipients]
+					: [...meRecipients, ...otherRecipients]
+				if (phashRecipients.length > 0) {
+					extraAttrs['phash'] = generateParticipantHashV2(phashRecipients)
 				}
 
 				shouldIncludeDeviceIdentity = shouldIncludeDeviceIdentity || s1 || s2
@@ -1262,6 +1289,15 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 	}
 
 	const getMediaType = (message: proto.IMessage) => {
+		// For view-once media, unwrap the viewOnceMessage wrapper before checking media type
+		const inner =
+			message.viewOnceMessage?.message ||
+			message.viewOnceMessageV2?.message ||
+			message.viewOnceMessageV2Extension?.message
+		if (inner) {
+			return getMediaType(inner)
+		}
+
 		if (message.imageMessage) {
 			return 'image'
 		} else if (message.videoMessage) {
